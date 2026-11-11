@@ -1,23 +1,1869 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CR Group Tracker</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 0 auto; padding: 24px; line-height: 1.6; color: #222; }
-    a { color: #1a73e8; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+<title>CR Group Tracker</title>
+<!-- Web app only: backend settings + a browser version of the Android bridge (both do nothing in the app). -->
+<script src="config.js"></script>
+<script src="bridge.js"></script>
+<style>
+  /* ------------------------------------------------------------ Themes
+     Admins: dark "spatial" UI with cyan accents. Everyone else: the original light UI (body.theme-light). */
+  :root {
+    --bg: #0b1016;
+    --panel: #111922;
+    --panel-2: #16212c;
+    --field: #0d151d;
+    --stage: #0b1218;
+    --line: #223140;
+    --text: #e6edf3;
+    --muted: #8b98a5;
+    --cyan: #22d3ee;
+    --cyan-strong: #00e5ff;
+    --on-cyan: #00262c;
+    --green: #34d399;
+    --gold: #f5d76e;
+    --warn: #fbbf24;
+    --danger: #f87171;
+    --glow: 0 0 18px rgba(0, 229, 255, 0.35);
+    --tree-line: #2f4252;
+    --mono: 'Roboto Mono', 'Droid Sans Mono', ui-monospace, monospace;
+  }
+  body.theme-light {
+    --bg: #f0f2f5;
+    --panel: #ffffff;
+    --panel-2: #f5f7fa;
+    --field: #ffffff;
+    --stage: #fafafa;
+    --line: #dfe5ec;
+    --text: #2c3e50;
+    --muted: #7f8c8d;
+    --cyan: #3498db;
+    --cyan-strong: #3498db;
+    --on-cyan: #ffffff;
+    --green: #27ae60;
+    --warn: #f39c12;
+    --danger: #e74c3c;
+    --glow: 0 2px 8px rgba(52, 152, 219, 0.25);
+    --tree-line: #94a3b8;
+    --mono: 'Segoe UI', Roboto, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body {
+    font-family: 'Segoe UI', Roboto, Arial, sans-serif;
+    padding: 0 0 84px;
+    min-height: 100vh;
+    background: radial-gradient(1200px 500px at 50% -200px, rgba(34, 211, 238, 0.10), transparent 70%), var(--bg);
+  }
+  body.theme-light { background: var(--bg); }
+  button { font-family: inherit; cursor: pointer; border: none; color: inherit; background: none; font-size: 14px; }
+  button:disabled { opacity: 0.55; }
+  input, select {
+    width: 100%; padding: 12px; font-size: 15px; font-family: inherit;
+    color: var(--text); background: var(--field); border: 1px solid var(--line); border-radius: 10px; outline: none;
+  }
+  input:focus, select:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.18); }
+  body:not(.theme-light) input[type=date] { color-scheme: dark; }
+  .hidden { display: none !important; }
+  .page { max-width: 760px; margin: 0 auto; padding: 14px 14px 0; }
+
+  /* Role-dependent controls (body classes set from window.onMembersUpdated) */
+  body:not(.is-admin) .admin-only, body.is-admin .user-only, body:not(.is-main-admin) .main-admin-only,
+  body:not(.can-decide) .decide-only, body:not(.can-edit) .edit-only, body.can-edit .no-edit-only { display: none !important; }
+
+  /* ------------------------------------------------------------ Header */
+  .topbar { display: flex; align-items: center; gap: 10px; }
+  .brand { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+  .brand-tile {
+    width: 48px; height: 48px; border-radius: 14px; object-fit: cover; flex-shrink: 0;
+    border: 1px solid rgba(245, 215, 110, 0.45); box-shadow: 0 0 18px rgba(245, 215, 110, 0.18);
+  }
+  .brand-text { min-width: 0; }
+  .welcome-to { font-size: 10px; letter-spacing: 2.5px; color: var(--muted); text-transform: uppercase; }
+  .brand-title {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    font-family: Georgia, 'Times New Roman', serif; font-weight: 700; font-size: 19px; line-height: 1.1;
+  }
+  .brand-name {
+    color: #d4af37;
+    background: linear-gradient(135deg, #a67c00 0%, #f5d76e 40%, #d4af37 60%, #b8901c 100%);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .pro-pill {
+    font-family: var(--mono); font-size: 9px; font-weight: 700; letter-spacing: 1px; padding: 2px 6px;
+    border-radius: 5px; color: var(--on-cyan); background: var(--cyan);
+  }
+  .pro-pill.gold { background: linear-gradient(135deg, #a67c00, #f5d76e); color: #2b1f00; }
+  .pro-pill.plain { background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); }
+  .brand-sub { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-top: 3px; }
+  .top-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .icon-btn {
+    position: relative; width: 40px; height: 40px; border-radius: 12px;
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--cyan); font-size: 18px;
+  }
+  .icon-btn.spinning .spin { display: inline-block; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .badge {
+    position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; padding: 0 5px;
+    border-radius: 9px; background: #ef4444; color: white; font-size: 10px; font-weight: 700; line-height: 18px;
+    font-family: sans-serif; text-align: center;
+  }
+  .account-strip {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+    margin: 12px 0 6px; font-size: 12px; color: var(--muted);
+  }
+  .account-strip b { color: var(--text); }
+  .mode-pill {
+    font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 0.5px; padding: 4px 9px;
+    border-radius: 8px; color: var(--green); background: rgba(52, 211, 153, 0.1); border: 1px solid rgba(52, 211, 153, 0.35);
+  }
+  .mode-pill.member { color: var(--cyan); background: rgba(34, 211, 238, 0.08); border-color: rgba(34, 211, 238, 0.35); }
+  .sync-line { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); margin-bottom: 12px; cursor: pointer; }
+  .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  .sync-line.synced .sync-dot { background: var(--green); }
+  .sync-line.syncing .sync-dot { background: var(--warn); animation: pulse 1s ease-in-out infinite; }
+  .sync-line.failed { color: var(--danger); }
+  .sync-line.failed .sync-dot { background: var(--danger); }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+
+  /* Members' quick actions (non-admins) */
+  .quick-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .quick-actions button {
+    display: flex; align-items: center; justify-content: center; gap: 6px; padding: 11px 8px; border-radius: 12px;
+    background: var(--panel); border: 1px solid var(--line); font-size: 13px; font-weight: 600; color: var(--text);
+  }
+  .quick-actions button.primary { background: var(--cyan-strong); color: var(--on-cyan); border-color: transparent; }
+  .quick-actions button.logout { color: var(--danger); }
+
+  /* ------------------------------------------------------------ Panels, chips, buttons */
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 14px; margin-bottom: 14px;
+  }
+  body:not(.theme-light) .panel { background: linear-gradient(180deg, var(--panel) 0%, #0e151d 100%); }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 7px 11px; border-radius: 12px;
+    font-family: var(--mono); font-size: 10.5px; font-weight: 700; letter-spacing: 0.4px; line-height: 1.3;
+  }
+  .chip-cyan { color: var(--cyan); background: rgba(34, 211, 238, 0.07); border: 1px solid var(--cyan); }
+  .chip-dark { color: var(--text); background: var(--panel-2); border: 1px solid var(--line); }
+  .section-head { display: flex; align-items: center; gap: 10px; margin: 6px 2px 12px; }
+  .section-head h2 { margin: 0; font-size: 20px; font-weight: 700; flex: 1; line-height: 1.2; }
+  .section-head .sh-icon { color: var(--cyan); font-size: 20px; }
+  .link-btn { color: var(--cyan); font-family: var(--mono); font-size: 11px; font-weight: 700; text-align: right; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 5px; padding: 7px 12px; border-radius: 10px; font-size: 12.5px; font-weight: 600;
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+  }
+  .btn-danger { color: var(--danger); border-color: var(--danger); background: rgba(248, 113, 113, 0.08); }
+  .btn-ok { color: #022c22; background: var(--green); border-color: transparent; font-weight: 700; }
+  body.theme-light .btn-ok { color: #fff; }
+  .cta {
+    width: 100%; padding: 16px; margin: 6px 0 12px; border-radius: 18px; font-size: 16px; font-weight: 700;
+    background: var(--cyan-strong); color: var(--on-cyan); box-shadow: var(--glow);
+  }
+  .empty-card { padding: 24px; text-align: center; color: var(--muted); font-size: 13px; border: 1px dashed var(--line); border-radius: 16px; margin-bottom: 12px; }
+  .sub-title { font-family: var(--mono); font-size: 11px; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; margin: 16px 4px 10px; }
+
+  /* ------------------------------------------------------------ Search */
+  .search-box { position: relative; margin-bottom: 12px; }
+  .search-box input { padding-right: 38px; border-radius: 12px; background: var(--panel); }
+  .search-clear { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); padding: 6px 8px; color: var(--muted); cursor: pointer; }
+  .search-results {
+    position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 50; max-height: 55vh; overflow-y: auto;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+  }
+  .search-result { padding: 10px 12px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .search-result:last-child { border-bottom: none; }
+  .sr-name { font-weight: 600; }
+  .sr-name mark { background: rgba(245, 215, 110, 0.45); color: inherit; padding: 0; border-radius: 3px; }
+  .sr-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .search-empty { padding: 12px; color: var(--muted); text-align: center; font-size: 13px; }
+
+  /* ------------------------------------------------------------ Chart & list */
+  .tree-chips { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .tree-tools { display: flex; justify-content: space-between; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .tree-tools .group { display: inline-flex; gap: 4px; }
+  .tree-tools button {
+    padding: 7px 10px; border-radius: 9px; background: var(--panel-2); border: 1px solid var(--line);
+    font-family: var(--mono); font-size: 11px; color: var(--text); min-width: 34px;
+  }
+  .tree-wrapper {
+    width: 100%; max-height: 70vh; overflow: auto; padding: 14px; border-radius: 14px;
+    background: var(--stage); border: 1px solid var(--line);
+  }
+  .tree-list, .tree-list ul { list-style: none; margin: 0; padding-left: 24px; position: relative; }
+  .tree-list { padding-left: 0; }
+  .tree-list li { position: relative; margin: 8px 0; }
+  .tree-list ul::before { content: ''; position: absolute; top: 0; bottom: 12px; left: 12px; border-left: 2px dashed var(--tree-line); }
+  .member-card {
+    display: inline-flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px;
+    background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--cyan);
+  }
+  .toggle-btn {
+    display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+    background: var(--cyan); color: var(--on-cyan); font-size: 11px; cursor: pointer; transition: transform 0.2s ease;
+  }
+  .toggle-btn.collapsed { transform: rotate(-90deg); background: var(--muted); color: var(--panel); }
+  .toggle-placeholder { width: 24px; flex-shrink: 0; }
+  .member-info { cursor: pointer; }
+  .name { font-weight: 600; font-size: 15px; }
+  .contact { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .nested-group.hidden { display: none; }
+  .edit-icon, .delete-icon, .add-icon { font-size: 13px; cursor: pointer; padding: 4px; }
+  .add-child {
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 10px; cursor: pointer;
+    border: 1.5px dashed var(--cyan); color: var(--cyan); font-size: 13px; font-weight: 600;
+  }
+  .count-badge, .level-badge, .rank-badge, .usdt-badge {
+    display: inline-block; font-family: var(--mono); font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 8px;
+    margin-left: 4px; vertical-align: middle;
+  }
+  .count-badge { color: var(--cyan); background: rgba(34, 211, 238, 0.12); }
+  .count-badge.done { color: var(--green); background: rgba(52, 211, 153, 0.15); }
+  .level-badge { color: #8e44ad; background: rgba(167, 139, 250, 0.18); }
+  body:not(.theme-light) .level-badge { color: #c4b5fd; }
+  .level-badge.root { color: #b7791f; background: rgba(245, 215, 110, 0.22); }
+  body:not(.theme-light) .level-badge.root { color: var(--gold); }
+  .rank-badge { color: #7a5b00; background: linear-gradient(135deg, rgba(245,215,110,0.55), rgba(212,175,55,0.35)); }
+  body:not(.theme-light) .rank-badge { color: #f8e7a4; background: rgba(245, 215, 110, 0.15); border: 1px solid rgba(245, 215, 110, 0.4); }
+  .usdt-badge { color: var(--warn); background: rgba(251, 191, 36, 0.12); }
+  .usdt-badge.out { color: var(--green); background: rgba(52, 211, 153, 0.12); }
+  /* Direct / indirect member counts on a manager's card */
+  .team-box { display: flex; margin-top: 6px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; font-family: var(--mono); }
+  .team-box > div { flex: 1; padding: 4px 6px; text-align: center; }
+  .team-box > div + div { border-left: 1px solid var(--line); }
+  .team-box .tb-num { font-size: 15px; font-weight: 800; color: var(--cyan); line-height: 1.2; }
+  .team-box .tb-num.ind { color: var(--green); }
+  .team-box .tb-label { font-size: 9px; color: var(--muted); letter-spacing: 0.5px; text-transform: uppercase; }
+  .member-card .team-box { display: inline-flex; margin-top: 4px; }
+  .org-chart { display: inline-block; min-width: 100%; text-align: center; }
+  .org-chart > ul { display: inline-flex; padding-top: 0; }
+  .org-chart ul { display: flex; justify-content: center; list-style: none; margin: 0; padding: 20px 0 0; position: relative; }
+  .org-chart li { display: flex; flex-direction: column; align-items: center; position: relative; padding: 20px 5px 0; }
+  .org-chart li::before, .org-chart li::after {
+    content: ''; position: absolute; top: 0; right: 50%; width: 50%; height: 20px; border-top: 2px solid var(--tree-line);
+  }
+  .org-chart li::after { right: auto; left: 50%; border-left: 2px solid var(--tree-line); }
+  .org-chart li:only-child::before, .org-chart li:only-child::after { display: none; }
+  .org-chart li:only-child { padding-top: 0; }
+  .org-chart li:first-child::before, .org-chart li:last-child::after { border: 0 none; }
+  .org-chart li:last-child::before { border-right: 2px solid var(--tree-line); border-radius: 0 6px 0 0; }
+  .org-chart li:first-child::after { border-radius: 6px 0 0 0; }
+  .org-chart ul ul::before { content: ''; position: absolute; top: 0; left: 50%; height: 20px; border-left: 2px solid var(--tree-line); }
+  .node-card {
+    width: 150px; padding: 8px; border-radius: 12px; text-align: center;
+    background: var(--panel); border: 1.5px solid var(--cyan);
+  }
+  .node-name { font-weight: 700; font-size: 13px; padding: 4px 2px; cursor: pointer; word-break: break-word; }
+  .node-badges { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; margin-top: 4px; }
+  .node-badges > span { margin-left: 0; }
+  .node-line { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .node-actions { display: flex; justify-content: center; gap: 14px; margin-top: 6px; font-size: 14px; }
+  .node-actions span { cursor: pointer; }
+  .node-toggle { margin-top: 6px; padding-top: 5px; border-top: 1px dashed var(--line); font-size: 11px; font-weight: 600; color: var(--cyan); cursor: pointer; }
+  .node-add {
+    width: 120px; padding: 10px 8px; border-radius: 12px; text-align: center; cursor: pointer;
+    border: 1.5px dashed var(--cyan); color: var(--cyan); font-weight: 600; font-size: 12px;
+  }
+  .node-add small { color: var(--muted); font-weight: 400; }
+  .search-hit { outline: 3px solid var(--warn); outline-offset: 2px; box-shadow: 0 0 16px rgba(251, 191, 36, 0.6) !important; }
+
+  /* ------------------------------------------------------------ Metrics & manager categories (admins) */
+  .metrics-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .metrics-head h2 { margin: 0; font-size: 19px; flex: 1; line-height: 1.2; }
+  .live-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 10px var(--cyan); }
+  .cloud-pill {
+    font-family: var(--mono); font-size: 10px; font-weight: 700; padding: 6px 9px; border-radius: 12px; text-align: center;
+    color: var(--green); border: 1px solid rgba(52, 211, 153, 0.4); background: rgba(52, 211, 153, 0.08);
+  }
+  .cloud-pill.off { color: var(--warn); border-color: rgba(251, 191, 36, 0.4); background: rgba(251, 191, 36, 0.08); }
+  .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .metric { padding: 12px; border-radius: 14px; background: var(--field); border: 1px solid var(--line); min-height: 92px; }
+  .metric .m-label { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.5px; text-transform: uppercase; }
+  .metric .m-value { font-size: 22px; font-weight: 700; margin-top: 6px; line-height: 1.15; }
+  .metric .m-value.cyan { color: var(--cyan); }
+  .metric .m-value.green { color: var(--green); }
+  .metric .m-value.warn { color: var(--warn); }
+  .metric .m-value.small { font-size: 16px; }
+  .metric .m-sub { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-top: 6px; }
+  .metric .m-sub.warn { color: var(--warn); }
+  .metric .m-sub.ok { color: var(--green); }
+  .cat-title { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .cat-title h2 { margin: 0; font-size: 18px; flex: 1; }
+  .cat-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; overflow: hidden; border-radius: 12px; border: 1px solid var(--line); }
+  .cat-table th {
+    padding: 8px 4px; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.4px; text-transform: uppercase; color: #2b1f00;
+    background: linear-gradient(135deg, #a67c00, #f5d76e);
+  }
+  .cat-table td { padding: 9px 4px; text-align: center; border-top: 1px solid var(--line); }
+  .cat-table td:first-child { text-align: left; padding-left: 10px; font-weight: 700; }
+  .cat-table tr.cat-row { cursor: pointer; }
+  .cat-table .cat-count {
+    display: inline-block; min-width: 28px; padding: 3px 8px; border-radius: 10px; font-family: var(--mono); font-weight: 800;
+    color: var(--on-cyan); background: var(--cyan-strong);
+  }
+  .cat-table .cat-count.zero { color: var(--muted); background: var(--panel-2); }
+  .cat-table tr.cat-names td { text-align: left; padding: 8px 10px; color: var(--muted); background: var(--field); line-height: 1.6; }
+  .cat-note { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+
+  /* ------------------------------------------------------------ Registry (Members tab) & deposits */
+  .filter-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 2px 10px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .filter-row select {
+    width: auto; max-width: 55%; padding: 6px 10px; font-family: var(--mono); font-size: 11px; color: var(--cyan);
+    background: rgba(34, 211, 238, 0.06); border-color: var(--cyan); border-radius: 8px;
+  }
+  .reg-card { padding: 14px; border-radius: 18px; margin-bottom: 12px; background: var(--panel); border: 1px solid var(--line); }
+  .reg-card.root { border-color: var(--cyan); }
+  .reg-card.pending { border-color: rgba(251, 191, 36, 0.6); }
+  .reg-top { display: flex; gap: 12px; align-items: flex-start; }
+  .avatar {
+    width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-weight: 700; font-size: 14px; color: var(--c, var(--cyan));
+    background: color-mix(in srgb, var(--c, #22d3ee) 14%, transparent); border: 1px solid color-mix(in srgb, var(--c, #22d3ee) 45%, transparent);
+  }
+  .reg-main { flex: 1; min-width: 0; }
+  .reg-name { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-weight: 700; font-size: 16px; }
+  .tag { font-family: var(--mono); font-size: 9px; font-weight: 800; letter-spacing: 0.6px; padding: 2px 6px; border-radius: 4px; }
+  .tag-root { background: var(--cyan-strong); color: var(--on-cyan); }
+  .tag-lead { background: rgba(52, 211, 153, 0.15); color: var(--green); }
+  .tag-member { background: var(--panel-2); color: var(--muted); }
+  .tag-pending { background: rgba(251, 191, 36, 0.18); color: var(--warn); }
+  .reg-sub { font-size: 12.5px; color: var(--muted); margin-top: 4px; word-break: break-word; }
+  .reg-sub b { color: var(--text); font-weight: 600; }
+  .level-pill {
+    flex-shrink: 0; padding: 5px 10px; border-radius: 14px; font-family: var(--mono); font-size: 10.5px; font-weight: 700;
+    color: var(--cyan); border: 1px solid var(--cyan); background: rgba(34, 211, 238, 0.06); text-align: center;
+  }
+  .level-pill.root { color: #b7791f; border-color: rgba(212, 175, 55, 0.6); background: rgba(245, 215, 110, 0.08); }
+  body:not(.theme-light) .level-pill.root { color: var(--gold); }
+  .level-pill.awaiting { color: var(--warn); border-color: rgba(251, 191, 36, 0.6); background: rgba(251, 191, 36, 0.08); }
+  .reg-bottom { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+  .mini { font-family: var(--mono); font-size: 10.5px; padding: 4px 8px; border-radius: 6px; background: var(--panel-2); color: var(--muted); }
+  .mini.ok { color: var(--green); }
+  .spacer { flex: 1; }
+  .link-arrow { color: var(--cyan); font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 6px 0; }
+  .show-more { width: 100%; padding: 12px; margin-bottom: 12px; border-radius: 14px; background: var(--panel-2); border: 1px dashed var(--line); color: var(--cyan); font-weight: 600; }
+  .export-bar {
+    display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; padding: 13px;
+    border-radius: 14px; background: var(--panel-2); border: 1px solid var(--line); font-size: 13.5px;
+  }
+  .export-bar button { font-size: 13.5px; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+  .pill-filter { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 10px; }
+  .pill-filter button {
+    flex-shrink: 0; padding: 8px 14px; border-radius: 14px; font-family: var(--mono); font-size: 11px; font-weight: 700;
+    color: var(--muted); background: var(--field); border: 1px solid var(--line);
+  }
+  .pill-filter button.active { background: var(--cyan-strong); color: var(--on-cyan); border-color: transparent; }
+  .dep-row { display: flex; align-items: center; gap: 12px; padding: 12px; margin-bottom: 8px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); }
+  .dep-row.out { border-color: rgba(52, 211, 153, 0.5); }
+  .dep-main { flex: 1; min-width: 0; }
+  .dep-name { font-weight: 700; font-size: 15px; }
+  .dep-check { display: flex; flex-direction: column; align-items: center; gap: 3px; font-family: var(--mono); font-size: 9.5px; color: var(--muted); cursor: pointer; }
+  .dep-check input { width: 26px; height: 26px; padding: 0; accent-color: #22c55e; cursor: pointer; }
+
+  /* ------------------------------------------------------------ Requests / Profile */
+  .wide-btn {
+    width: 100%; display: flex; align-items: center; gap: 10px; padding: 14px; border-radius: 14px; margin-bottom: 10px;
+    background: var(--panel-2); border: 1px solid var(--line); font-size: 15px; font-weight: 600; text-align: left; position: relative;
+  }
+  .wide-btn .badge { position: static; margin-left: auto; }
+  .profile-card { display: flex; align-items: center; gap: 14px; }
+  .profile-card .avatar { width: 60px; height: 60px; font-size: 20px; border-radius: 18px; }
+  .profile-name { font-size: 20px; font-weight: 700; }
+  .menu-list { padding: 4px 0; }
+  .menu-list button {
+    width: 100%; display: flex; align-items: center; gap: 12px; padding: 14px; text-align: left; font-size: 15px;
+    border-bottom: 1px solid var(--line);
+  }
+  .menu-list button:last-child { border-bottom: none; }
+  .menu-list .mi-ico { width: 24px; text-align: center; }
+  .menu-list .mi-arrow { margin-left: auto; color: var(--muted); }
+  .menu-list button.logout { color: var(--danger); font-weight: 700; }
+
+  /* ------------------------------------------------------------ Bottom navigation */
+  .bottom-nav {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: flex; justify-content: space-around;
+    padding: 8px 4px 10px; background: var(--panel); border-top: 1px solid var(--line);
+  }
+  body:not(.theme-light) .bottom-nav { background: rgba(11, 16, 22, 0.96); }
+  .bottom-nav button {
+    position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px 0;
+    font-family: var(--mono); font-size: 10px; color: var(--muted); min-width: 0;
+  }
+  .bottom-nav .nav-ico { font-size: 20px; line-height: 24px; filter: grayscale(1); opacity: 0.7; }
+  .bottom-nav button.active { color: var(--cyan); font-weight: 700; }
+  .bottom-nav button.active .nav-ico { filter: none; opacity: 1; }
+  .bottom-nav .nav-dot {
+    position: absolute; top: 0; left: calc(50% + 6px); min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
+    background: var(--warn); color: #2b1f00; font-size: 9px; font-weight: 800; line-height: 16px; text-align: center;
+  }
+
+  /* ------------------------------------------------------------ Add / Edit form */
+  .modal {
+    position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-start; justify-content: center;
+    padding: 24px 12px; overflow-y: auto; background: rgba(3, 7, 12, 0.6);
+  }
+  .modal-card {
+    width: 100%; max-width: 480px; padding: 20px; border-radius: 20px;
+    background: var(--panel); border: 1px solid var(--cyan); box-shadow: 0 20px 50px rgba(0,0,0,0.4);
+  }
+  .modal-card h2 { margin: 0 0 14px; font-size: 19px; text-align: center; }
+  .modal form { display: grid; gap: 12px; }
+  .modal label { display: flex; flex-direction: column; gap: 6px; font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: 0.4px; }
+  .phone-row { display: flex; gap: 8px; }
+  .phone-row select { width: 44%; }
+  .phone-row input { flex: 1; min-width: 0; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: -4px; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 4px; }
+  .modal-actions button { flex: 1; padding: 13px; border-radius: 12px; font-weight: 700; font-size: 14px; }
+  .modal-actions .cancel { background: var(--panel-2); border: 1px solid var(--line); }
+  .modal-actions .save { background: var(--cyan-strong); color: var(--on-cyan); }
+
+  /* ------------------------------------------------------------ New member celebration */
+  .celebration {
+    position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(180deg, #2a0845 0%, #4b2a9a 45%, #8c6ad8 80%, #b9a0f0 100%);
+    opacity: 0; transition: opacity 0.4s ease; cursor: pointer;
+  }
+  .celebration.show { opacity: 1; }
+  .celebration canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .celebration-text {
+    position: relative; padding: 0 24px; text-align: center; color: white;
+    font-family: Georgia, 'Times New Roman', serif; text-shadow: 0 2px 12px rgba(0,0,0,0.5);
+    transform: scale(0.6); transition: transform 0.5s cubic-bezier(.2,1.6,.4,1);
+  }
+  .celebration.show .celebration-text { transform: scale(1); }
+  .celebration-text .big { font-size: 26px; font-weight: 700; color: #f5d76e; }
+  .celebration-text .small { font-size: 16px; margin-top: 6px; opacity: 0.9; }
+</style>
 </head>
 <body>
-  <h1>🌳 CR Group Tracker</h1>
-  <p>An Android app to keep track of your group members, their levels and who joined under whom.
-  All users share one member list. Admins add, edit and delete members; other users can view the list
-  and request new members.
-  Sign in with a username and password or with your Google account.</p>
-  <ul>
-    <li><a href="privacy.html">Privacy Policy</a></li>
-    <li>Contact: <a href="mailto:angappanmani2611@gmail.com">angappanmani2611@gmail.com</a></li>
-  </ul>
+<script>
+  // Apply the last known theme before anything is drawn (no dark flash for members).
+  if (localStorage.getItem('cr_is_admin') !== '1') document.body.classList.add('theme-light');
+</script>
+<div class="page">
+  <!-- Header -->
+  <header class="topbar">
+    <div class="brand">
+      <img class="brand-tile" src="cr_logo.jpg" alt="CR Group Tracker logo">
+      <div class="brand-text">
+        <div class="welcome-to">Welcome to</div>
+        <div class="brand-title"><span class="brand-name">CR GROUP TRACKER</span><span id="rolePill" class="pro-pill plain">MEMBER</span></div>
+        <div class="brand-sub">Member &amp; Referral Spatial Core</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button id="syncBtn" class="icon-btn" onclick="Android.syncNow()" aria-label="Sync now" title="Sync now"><span class="spin">⟳</span></button>
+      <button class="icon-btn" onclick="Android.showNotifications()" aria-label="Notifications" title="Notifications">🔔<span id="bellBadge" class="badge hidden"></span></button>
+    </div>
+  </header>
+
+  <div class="account-strip">
+    <span>👤 Welcome, <b id="welcomeName">…</b></span>
+    <span id="modePill" class="mode-pill member">● MEMBER MODE</span>
+  </div>
+  <div id="syncStatus" class="sync-line syncing" onclick="Android.syncNow()" title="Tap to sync now">
+    <span class="sync-dot"></span><span id="syncText">Syncing...</span>
+  </div>
+
+  <!-- Members (non-admins): requests and logout -->
+  <div class="quick-actions user-only">
+    <button class="primary" onclick="openAddForm()"><span class="edit-only">➕ Add Member</span><span class="no-edit-only">📝 Request Member</span></button>
+    <button onclick="Android.showMyRequests()">📋 My Requests</button>
+    <button onclick="Android.requestAdminAccess()">🔑 Request Admin</button>
+    <button class="no-edit-only" onclick="Android.requestEditAccess()">✏️ Request Edit Access</button>
+    <button class="edit-only" disabled>✏️ Edit access ✓</button>
+    <button class="decide-only" onclick="showTab('requests')">📝 Requests to Accept</button>
+    <button class="logout" onclick="Android.logout()">🚪 Logout</button>
+  </div>
+
+  <!-- Search (chart & list) -->
+  <div id="searchArea" class="search-box">
+    <input type="search" id="searchInput" aria-label="Search members" placeholder="🔍 Search member by name or phone" autocomplete="off"
+           oninput="onSearch()" onfocus="onSearch()" onkeydown="if (event.key === 'Enter') pickFirstResult()">
+    <span id="searchClear" class="search-clear hidden" onclick="clearSearch()" title="Clear">✕</span>
+    <div id="searchResults" class="search-results hidden"></div>
+  </div>
+
+  <!-- ============================================================ DEPOSITS TAB (admins) -->
+  <section id="tab-deposits" class="tab hidden">
+    <div class="section-head"><span class="sh-icon">💰</span><h2>Joining Deposits (500 USDT)</h2></div>
+    <div class="metrics-grid" style="margin-bottom:12px">
+      <div class="metric"><div class="m-label">Total deposited</div><div id="depTotal" class="m-value">0</div><div id="depTotalSub" class="m-sub"></div></div>
+      <div class="metric"><div class="m-label">Still holding</div><div id="depHolding" class="m-value warn">0</div><div id="depHoldingSub" class="m-sub"></div></div>
+      <div class="metric"><div class="m-label">Withdrawn</div><div id="depOut" class="m-value green">0</div><div id="depOutSub" class="m-sub"></div></div>
+      <div class="metric"><div class="m-label">Per member</div><div class="m-value small">500 USDT</div><div class="m-sub">Tick ✓ when withdrawn</div></div>
+    </div>
+    <div class="pill-filter" id="depFilter">
+      <button data-f="all" onclick="setDepFilter('all')">All</button>
+      <button data-f="holding" onclick="setDepFilter('holding')">⏳ Holding</button>
+      <button data-f="out" onclick="setDepFilter('out')">✅ Withdrawn</button>
+    </div>
+    <div class="search-box">
+      <input type="search" id="depSearch" placeholder="🔍 Filter members…" autocomplete="off" oninput="renderDeposits()">
+    </div>
+    <div id="depList"></div>
+  </section>
+
+  <!-- ============================================================ CHART TAB -->
+  <section id="tab-chart" class="tab">
+    <div class="panel">
+      <div class="tree-chips">
+        <span class="chip chip-cyan">🌳 TREE TOPOLOGY: <span class="topoCount">0</span> MEMBERS ACTIVE</span>
+        <span class="chip chip-dark">⛓ MAX DEPTH: <span class="maxDepthText">—</span></span>
+      </div>
+      <div class="tree-tools">
+        <span class="group">
+          <button onclick="zoomChart(-1)" title="Zoom out">－</button>
+          <button id="zoomLabel" onclick="zoomChart(0)" title="Back to 100%">100%</button>
+          <button onclick="zoomChart(1)" title="Zoom in">＋</button>
+          <button onclick="fitChart()" title="Fit on screen">⤢ Fit</button>
+        </span>
+        <span class="group">
+          <button onclick="expandAll()">Expand</button>
+          <button onclick="collapseAll()">Collapse</button>
+        </span>
+      </div>
+      <div class="tree-wrapper" id="chartScroll"><div id="chartView" class="org-chart"></div></div>
+    </div>
+
+    <div class="panel admin-only">
+      <div class="metrics-head">
+        <span class="live-dot"></span>
+        <h2>Real-Time Group Metrics</h2>
+        <span id="cloudPill" class="cloud-pill">☁ SHARED CLOUD<br>SYNCED</span>
+      </div>
+      <div class="metrics-grid">
+        <div class="metric">
+          <div class="m-label">Total Members</div>
+          <div class="m-value"><span id="mTotal">0</span> Active</div>
+          <div id="mPending" class="m-sub warn hidden"></div>
+        </div>
+        <div class="metric">
+          <div class="m-label">Hierarchy Depth</div>
+          <div class="m-value cyan"><span id="mDepth">0</span> Levels</div>
+          <div id="mDepthSub" class="m-sub"></div>
+        </div>
+        <div class="metric">
+          <div class="m-label">Deposits held</div>
+          <div class="m-value small"><span id="mUsdt">0</span> USDT</div>
+          <div id="mUsdtSub" class="m-sub"></div>
+        </div>
+        <div class="metric">
+          <div class="m-label">Role Permissions</div>
+          <div id="mRole" class="m-value small cyan">Admin</div>
+          <div id="mRoleSub" class="m-sub">Direct Hierarchy Control</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel admin-only">
+      <div class="cat-title"><span>🏅</span><h2>Manager Categories</h2></div>
+      <table class="cat-table">
+        <thead><tr><th>Position</th><th>Direct</th><th>Team</th><th>Bonus</th><th>Guaranteed</th><th>Members</th></tr></thead>
+        <tbody id="catBody"></tbody>
+      </table>
+      <div class="cat-note">Each member's category is worked out from their <b>direct</b> members and their whole <b>team</b>
+        (everyone below them). Level 0 = no members joined yet / below Level 1. Tap a row to see who is in it.</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ LIST TAB -->
+  <section id="tab-list" class="tab hidden">
+    <div class="panel">
+      <div class="tree-chips">
+        <span class="chip chip-cyan">🌳 <span class="topoCount">0</span> MEMBERS</span>
+        <span class="chip chip-dark">⛓ <span class="maxDepthText">—</span></span>
+      </div>
+      <div class="tree-tools">
+        <span class="group"></span>
+        <span class="group">
+          <button onclick="expandAll()">Expand</button>
+          <button onclick="collapseAll()">Collapse</button>
+        </span>
+      </div>
+      <div class="tree-wrapper"><div id="listView" class="tree-list"></div></div>
+    </div>
+  </section>
+
+  <!-- ============================================================ MEMBERS TAB (admins) -->
+  <section id="tab-members" class="tab hidden">
+    <div class="section-head">
+      <span class="sh-icon">👥</span>
+      <h2>Group Member Registry</h2>
+      <button class="link-btn" onclick="openAddForm()">＋ Add<br>Member</button>
+    </div>
+    <div class="filter-row">
+      <span>Filter by Referral Tree:</span>
+      <select id="registryRoot" aria-label="Filter by referral tree" onchange="registryLimit = REGISTRY_PAGE; renderRegistry()"></select>
+    </div>
+    <div class="search-box">
+      <input type="search" id="registrySearch" placeholder="🔍 Filter members…" autocomplete="off" oninput="registryLimit = REGISTRY_PAGE; renderRegistry()">
+    </div>
+    <div id="registryPending" class="decide-only"></div>
+    <div id="registryList"></div>
+    <button class="cta" onclick="openAddForm()">⊕ Add New Member (Admin)</button>
+    <div class="export-bar">
+      🛡 <button onclick="Android.exportSpreadsheet()">Export Hierarchy Data</button> / <button onclick="Android.openPrivacyPolicy()">View Privacy Policy</button>
+    </div>
+  </section>
+
+  <!-- ============================================================ REQUESTS TAB (roots & main admins) -->
+  <section id="tab-requests" class="tab hidden">
+    <div class="section-head"><span class="sh-icon">🔔</span><h2>Requests &amp; Alerts</h2></div>
+    <button class="wide-btn" onclick="Android.showNotifications()">🔔 Notifications <span id="notifBadge" class="badge hidden"></span></button>
+    <div class="sub-title">Pending approvals</div>
+    <div id="requestsDecide"><div class="empty-card">Loading…</div></div>
+  </section>
+
+  <!-- ============================================================ PROFILE TAB (admins) -->
+  <section id="tab-profile" class="tab hidden">
+    <div class="panel profile-card">
+      <div id="profileAvatar" class="avatar">?</div>
+      <div>
+        <div class="welcome-to">Welcome to CR Group Tracker</div>
+        <div id="profileName" class="profile-name">…</div>
+        <div id="profileRole" class="reg-sub"></div>
+      </div>
+    </div>
+    <div class="panel menu-list">
+      <button class="decide-only" onclick="showTab('requests')"><span class="mi-ico">📝</span>Requests to Accept<span class="mi-arrow">›</span></button>
+      <button onclick="Android.exportSpreadsheet()"><span class="mi-ico">📊</span>Download Excel<span class="mi-arrow">›</span></button>
+      <button onclick="Android.importSpreadsheet()"><span class="mi-ico">📤</span>Upload Excel<span class="mi-arrow">›</span></button>
+      <button onclick="Android.editLevelTargets()"><span class="mi-ico">🎯</span>Level Targets<span class="mi-arrow">›</span></button>
+      <button class="main-admin-only" onclick="Android.showSettings()"><span class="mi-ico">⚙️</span>Settings<span class="mi-arrow">›</span></button>
+      <button onclick="Android.syncNow()"><span class="mi-ico">🔄</span>Sync Now<span class="mi-arrow">›</span></button>
+      <button onclick="Android.showClearOptions()"><span class="mi-ico">🧹</span>Clear Data<span class="mi-arrow">›</span></button>
+      <button onclick="Android.openPrivacyPolicy()"><span class="mi-ico">🛡</span>Privacy Policy<span class="mi-arrow">›</span></button>
+      <button class="logout" onclick="Android.logout()"><span class="mi-ico">🚪</span>Logout</button>
+    </div>
+  </section>
+</div>
+
+<!-- Bottom navigation: admins see every tab, everyone else Chart and List (+ Requests for roots) -->
+<nav class="bottom-nav">
+  <button class="admin-only" data-tab="deposits" onclick="showTab('deposits')"><span class="nav-ico">💰</span>Deposits</button>
+  <button data-tab="chart" onclick="showTab('chart')"><span class="nav-ico">🌳</span>Chart</button>
+  <button data-tab="list" onclick="showTab('list')"><span class="nav-ico">☰</span>List</button>
+  <button class="admin-only" data-tab="members" onclick="showTab('members')"><span class="nav-ico">👥</span>Members</button>
+  <button class="decide-only" data-tab="requests" onclick="showTab('requests')"><span class="nav-ico">🔔</span>Requests<span id="navReqDot" class="nav-dot hidden"></span></button>
+  <button class="admin-only" data-tab="profile" onclick="showTab('profile')"><span class="nav-ico">👤</span>Profile</button>
+</nav>
+
+<!-- Add / Edit Member form -->
+<div id="memberModal" class="modal hidden">
+  <div class="modal-card">
+    <h2 id="formTitle">Add Member</h2>
+    <form id="memberForm">
+      <label>MEMBER NAME *
+        <input type="text" id="name" placeholder="Member Name" maxlength="100" required>
+      </label>
+      <label>CONTACT NUMBER (OPTIONAL)
+        <span class="phone-row">
+          <select id="countryCode"></select>
+          <input type="tel" id="contact" inputmode="numeric" placeholder="98765 43210" maxlength="17">
+        </span>
+      </label>
+      <label>JOINED DATE (OPTIONAL)
+        <input type="date" id="doj">
+      </label>
+      <label>SELECT MANAGER
+        <select id="referrer" onchange="updateLevelOptions()">
+          <option value="">-- Root / No Referrer --</option>
+        </select>
+      </label>
+      <label>SELECT LEVEL
+        <select id="level"></select>
+      </label>
+      <div id="levelHint" class="hint"></div>
+      <label id="rootRow">SEND REQUEST TO (ROOT) *
+        <select id="rootSelect"></select>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="cancel" onclick="closeForm()">Cancel</button>
+        <button type="submit" id="saveBtn" class="save">💾 Save Member</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// Members are stored natively (Room cache + the Google Spreadsheet shared by all users). Android pushes the
+// current list through window.onMembersUpdated() whenever it changes, including after a cloud sync.
+// Member fields: { id, name, doj, referrer (= manager id), contact, level (0 = Root, 1..6, -1 = unknown),
+//                  addedBy, canEdit (admins and editors), withdrawn (500 USDT deposit; admins only) }
+let members = [];
+let levelTargets = [3, 5, 6, 10, 15, 20];
+let editingId = null;
+let draftId = null; // id of the member being added; makes a double-tap on Save harmless
+let collapsedNodes = new Set();
+let highlightedId = null; // member picked from the search results
+// Logged-in user and role; roots = names a member request can be sent to
+let me = { username: '', isAdmin: false, isMainAdmin: false, requestCount: 0, unreadCount: 0, canDecide: false, roots: [], canEdit: false };
+let syncState = 'syncing';
+let currentTab = localStorage.getItem('cr_tab') || 'chart';
+let savedTab = currentTab; // reopened once the role is known (admin tabs are hidden until then)
+let requestsToDecide = [];
+let stats = new Map(); // member id -> { direct, team, rank }
+let openCategory = null;
+let depFilter = 'all';
+const MAX_SEARCH_RESULTS = 50;
+const REGISTRY_PAGE = 60;
+let registryLimit = REGISTRY_PAGE;
+let centerChartPending = true;
+const ZOOM_MIN = 0.3;
+const ZOOM_MAX = 2.5;
+const ZOOM_STEP = 1.2;
+let chartZoom = clampZoom(parseFloat(localStorage.getItem('cr_chart_zoom')) || 1);
+
+const MAX_LEVEL = 6;
+const DEPOSIT_USDT = 500;
+// Manager Trading Volume Bonus: team size needed for Level 1..6 Manage (direct members come from the level targets)
+const TEAM_TARGETS = [0, 15, 50, 100, 200, 500];
+const VOLUME_BONUS = ['1.0%', '1.5%', '2.0%', '2.5%', '3.0%', '3.5%'];
+const GUARANTEED_BONUS = [15, 40, 100, 250, 1000, 3000];
+const LEGACY_STORAGE_KEY = 'cr_group_network';
+const SYNC_LABELS = { synced: 'Synced', syncing: 'Syncing...', offline: 'Offline', failed: 'Sync Failed' };
+const LEVEL_COLORS = ['#d4af37', '#22a6c8', '#27ae60', '#8e6bd8', '#d6589c', '#e67e22', '#3b82f6'];
+const COUNTRY_CODES = [
+  ['91', 'India'], ['1', 'USA / Canada'], ['44', 'UK'], ['971', 'UAE'], ['966', 'Saudi Arabia'],
+  ['974', 'Qatar'], ['968', 'Oman'], ['965', 'Kuwait'], ['973', 'Bahrain'], ['65', 'Singapore'],
+  ['60', 'Malaysia'], ['94', 'Sri Lanka'], ['977', 'Nepal'], ['880', 'Bangladesh'], ['61', 'Australia'],
+  ['64', 'New Zealand'], ['49', 'Germany'], ['33', 'France'], ['39', 'Italy'], ['81', 'Japan'],
+  ['86', 'China'], ['27', 'South Africa'], ['254', 'Kenya'], ['234', 'Nigeria']
+];
+
+// ---------------------------------------------------------------- Helpers
+
+function escapeHtml(value) {
+  return String(value == null ? '' : value).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[c]);
+}
+
+function byId(id) {
+  return members.find(m => String(m.id) === String(id));
+}
+
+function levelOf(member) {
+  return member && member.level >= 0 ? member.level : 0;
+}
+
+function levelLabel(level) {
+  return level === 0 ? 'Root' : 'Level ' + level;
+}
+
+function levelColor(member) {
+  return LEVEL_COLORS[Math.min(levelOf(member), LEVEL_COLORS.length - 1)];
+}
+
+function childrenOf(parentId) {
+  return members.filter(m => String(m.referrer) === String(parentId));
+}
+
+// Members whose manager no longer exists are treated as roots instead of disappearing
+function rootMembers() {
+  const ids = new Set(members.map(m => String(m.id)));
+  return members.filter(m => !m.referrer || !ids.has(String(m.referrer)));
+}
+
+// A manager leads its own group: no manager, a different level than its manager, or has members.
+function isManagerNode(member) {
+  const manager = byId(member.referrer);
+  return !manager || levelOf(manager) !== levelOf(member) || childrenOf(member.id).length > 0;
+}
+
+function descendantIds(id) {
+  const result = new Set();
+  const stack = [String(id)];
+  while (stack.length) {
+    childrenOf(stack.pop()).forEach(child => {
+      const childId = String(child.id);
+      if (!result.has(childId)) {
+        result.add(childId);
+        stack.push(childId);
+      }
+    });
+  }
+  return result;
+}
+
+function formatContact(contact) {
+  const match = /^\+(\d{1,3}) (\d+)$/.exec(contact || '');
+  if (match && match[1] === '91' && match[2].length === 10) return '+91 ' + match[2].slice(0, 5) + ' ' + match[2].slice(5);
+  return contact || '';
+}
+
+function initials(name) {
+  const parts = String(name || '?').trim().split(/\s+/).filter(Boolean);
+  return ((parts[0] || '?')[0] + (parts.length > 1 ? parts[parts.length - 1][0] : (parts[0] || '')[1] || '')).toUpperCase();
+}
+
+function newId() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-' + hex.slice(12, 16) + '-' + hex.slice(16, 20) + '-' + hex.slice(20);
+}
+
+// Tree order (each root followed by its downline), so lists read like the hierarchy
+function treeOrder() {
+  const out = [];
+  const seen = new Set();
+  const walk = m => {
+    if (seen.has(String(m.id))) return;
+    seen.add(String(m.id));
+    out.push(m);
+    childrenOf(m.id).forEach(walk);
+  };
+  rootMembers().forEach(walk);
+  members.forEach(walk);
+  return out;
+}
+
+// Distance from the top of the tree (0 = root)
+function depthMap() {
+  const depth = new Map();
+  const queue = rootMembers().map(m => [m, 0]);
+  while (queue.length) {
+    const [m, d] = queue.shift();
+    if (depth.has(String(m.id))) continue;
+    depth.set(String(m.id), d);
+    childrenOf(m.id).forEach(c => queue.push([c, d + 1]));
+  }
+  members.forEach(m => { if (!depth.has(String(m.id))) depth.set(String(m.id), 0); });
+  return depth;
+}
+
+// Direct members, whole team (everyone below) and the earned manager category for every member
+function computeStats() {
+  const kids = new Map();
+  members.forEach(m => {
+    const key = String(m.referrer || '');
+    if (!kids.has(key)) kids.set(key, []);
+    kids.get(key).push(m);
+  });
+  stats = new Map();
+  const visiting = new Set();
+  const team = m => {
+    const id = String(m.id);
+    if (stats.has(id)) return stats.get(id).team;
+    if (visiting.has(id)) return 0; // manager loop
+    visiting.add(id);
+    const direct = kids.get(id) || [];
+    const size = direct.reduce((sum, k) => sum + 1 + team(k), 0);
+    visiting.delete(id);
+    stats.set(id, { direct: direct.length, team: size, rank: rankFor(direct.length, size) });
+    return size;
+  };
+  members.forEach(team);
+}
+
+// Highest "Level N Manage" whose direct and team requirements are both met; 0 = not yet Level 1
+function rankFor(direct, team) {
+  let rank = 0;
+  for (let l = 1; l <= MAX_LEVEL; l++) {
+    if (direct >= levelTargets[l - 1] && team >= TEAM_TARGETS[l - 1]) rank = l;
+  }
+  return rank;
+}
+
+function statsOf(member) {
+  return stats.get(String(member.id)) || { direct: 0, team: 0, rank: 0 };
+}
+
+// "Direct | Indirect" box shown on every card that has members below it
+function teamBox(member) {
+  const s = statsOf(member);
+  if (s.team === 0) return '';
+  return `<div class="team-box">
+      <div><div class="tb-num">${s.direct}</div><div class="tb-label">Direct</div></div>
+      <div><div class="tb-num ind">${s.team - s.direct}</div><div class="tb-label">Indirect</div></div>
+    </div>`;
+}
+
+function rankBadge(member) {
+  const rank = statsOf(member).rank;
+  return rank > 0 ? `<span class="rank-badge">🏅 L${rank} Manage</span>` : '';
+}
+
+function depositBadge(member) {
+  if (!me.isAdmin) return '';
+  return member.withdrawn ? '<span class="usdt-badge out">💰 Withdrawn</span>' : '<span class="usdt-badge">💰 500 USDT</span>';
+}
+
+// ---------------------------------------------------------------- Android callbacks
+
+// Called by Android with the latest members (of all users), the shared level targets and the user's role
+window.onMembersUpdated = function(list, targets, user) {
+  members = Array.isArray(list) ? list : [];
+  if (Array.isArray(targets) && targets.length === MAX_LEVEL) levelTargets = targets;
+  const countChanged = user && user.requestCount !== me.requestCount;
+  if (user) applyRole(user);
+  computeStats();
+  if (editingId && !byId(editingId)) closeForm();
+  if (isFormOpen()) refreshFormOptions();
+  renderAll();
+  if (!document.getElementById('searchResults').classList.contains('hidden')) onSearch();
+  if (countChanged && (currentTab === 'requests' || currentTab === 'members')) loadRequests();
+};
+
+// Called by Android with { state, pending, lastSynced, message, username }
+window.onSyncStatus = function(status) {
+  syncState = status.state;
+  const el = document.getElementById('syncStatus');
+  el.className = 'sync-line ' + status.state;
+  let text = SYNC_LABELS[status.state] || status.state;
+  if (status.pending > 0) text += ` (${status.pending} pending)`;
+  if (status.state === 'failed' && status.message) text += ': ' + status.message;
+  if (status.lastSynced > 0) {
+    text += ' · Last synced ' + new Date(status.lastSynced).toLocaleString([], {
+      day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit'
+    });
+  }
+  document.getElementById('syncText').textContent = text;
+  document.getElementById('syncBtn').classList.toggle('spinning', status.state === 'syncing');
+  if (status.username && !me.username) setWelcome(status.username);
+  renderMetrics();
+};
+
+// Requests shown on the page: list = null on error; mine = the user's own requests (not shown here)
+window.onRequestsLoaded = function(list, mine, error) {
+  if (mine) return;
+  requestsToDecide = list || [];
+  renderRequests(error);
+  renderRegistryPending();
+};
+
+// Admins: every tab and the dark UI. Others: Chart and List in the light UI, plus request buttons.
+function applyRole(user) {
+  me = user;
+  localStorage.setItem('cr_is_admin', me.isAdmin ? '1' : '0');
+  document.body.classList.toggle('theme-light', !me.isAdmin);
+  document.body.classList.toggle('is-admin', !!me.isAdmin);
+  document.body.classList.toggle('is-main-admin', !!me.isMainAdmin);
+  document.body.classList.toggle('can-decide', !!me.canDecide);
+  document.body.classList.toggle('can-edit', !!me.canEdit);
+  refreshRootOptions();
+  setWelcome(me.username);
+  const pill = document.getElementById('rolePill');
+  pill.textContent = me.isMainAdmin ? 'MAIN ADMIN' : me.isAdmin ? 'ADMIN' : me.canEdit ? 'EDITOR' : 'MEMBER';
+  pill.className = 'pro-pill ' + (me.isMainAdmin ? 'gold' : me.isAdmin || me.canEdit ? '' : 'plain');
+  const mode = document.getElementById('modePill');
+  mode.textContent = me.isAdmin ? '● ADMIN MODE: ACTIVE' : me.canEdit ? '● EDITOR MODE' : me.canDecide ? '● ROOT MODE' : '● MEMBER MODE';
+  mode.className = 'mode-pill' + (me.isAdmin ? '' : ' member');
+  const pending = me.canDecide ? me.requestCount : 0;
+  setBadge('bellBadge', me.unreadCount || 0);
+  setBadge('notifBadge', me.unreadCount || 0);
+  setBadge('navReqDot', pending);
+  document.getElementById('profileRole').textContent = me.isMainAdmin ? '👑 Main Admin · full control' : '🛡 Admin · add, edit and delete members';
+  if (savedTab && tabAllowed(savedTab)) {
+    showTab(savedTab);
+    savedTab = null;
+  } else if (!tabAllowed(currentTab)) {
+    showTab('chart');
+  }
+}
+
+function setWelcome(name) {
+  document.getElementById('welcomeName').textContent = name || '…';
+  document.getElementById('profileName').textContent = name || '…';
+  const avatar = document.getElementById('profileAvatar');
+  avatar.textContent = initials(name);
+  avatar.style.setProperty('--c', '#d4af37');
+}
+
+// "Send request to" dropdown: the roots (Nandha, Saravanan, …); keeps the current choice
+function refreshRootOptions() {
+  const select = document.getElementById('rootSelect');
+  const current = select.value;
+  const roots = Array.isArray(me.roots) ? me.roots : [];
+  select.innerHTML = '<option value="">-- Choose a root --</option>' +
+    roots.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
+  if (roots.indexOf(current) >= 0) select.value = current;
+}
+
+function setBadge(id, count) {
+  const el = document.getElementById(id);
+  el.textContent = count > 99 ? '99+' : String(count);
+  el.classList.toggle('hidden', count <= 0);
+}
+
+// Android back button: closes the topmost thing first, then goes back to the chart
+window.handleBack = function() {
+  if (isFormOpen()) { closeForm(); return true; }
+  if (!document.getElementById('searchResults').classList.contains('hidden')) { hideSearchResults(); return true; }
+  if (currentTab !== 'chart') { showTab('chart'); return true; }
+  return false;
+};
+
+// ---------------------------------------------------------------- Tabs
+
+function tabAllowed(tab) {
+  if (tab === 'chart' || tab === 'list') return true;
+  if (tab === 'requests') return !!me.canDecide;
+  return !!me.isAdmin; // deposits, members, profile
+}
+
+function showTab(tab) {
+  currentTab = tabAllowed(tab) ? tab : 'chart';
+  localStorage.setItem('cr_tab', currentTab);
+  document.querySelectorAll('.tab').forEach(el => el.classList.toggle('hidden', el.id !== 'tab-' + currentTab));
+  document.querySelectorAll('.bottom-nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === currentTab));
+  document.getElementById('searchArea').classList.toggle('hidden', currentTab !== 'chart' && currentTab !== 'list');
+  window.scrollTo(0, 0);
+  renderCurrent();
+  if (currentTab === 'requests' || currentTab === 'members') loadRequests();
+}
+
+function loadRequests() {
+  if (me.canDecide) Android.loadRequests(false);
+}
+
+function renderAll() {
+  renderMetrics();
+  renderCategories();
+  renderRegistryRoots();
+  renderCurrent();
+}
+
+// Only the visible tab's big list is rebuilt
+function renderCurrent() {
+  if (currentTab === 'chart') renderChart();
+  else if (currentTab === 'list') renderList();
+  else if (currentTab === 'members') renderRegistry();
+  else if (currentTab === 'deposits') renderDeposits();
+}
+
+// ---------------------------------------------------------------- Metrics & categories
+
+function renderMetrics() {
+  const depth = depthMap();
+  const maxDepth = members.length ? Math.max(...depth.values()) : 0;
+  const levels = new Set(members.map(levelOf));
+  const lowest = levels.size ? Math.max(...levels) : 0;
+  document.querySelectorAll('.topoCount').forEach(el => { el.textContent = members.length; });
+  document.querySelectorAll('.maxDepthText').forEach(el => { el.textContent = members.length ? (maxDepth + 1) + ' TIERS' : '—'; });
+  document.getElementById('mTotal').textContent = members.length;
+  document.getElementById('mDepth').textContent = members.length ? maxDepth + 1 : 0;
+  document.getElementById('mDepthSub').textContent = members.length ? 'Root → ' + (lowest === 0 ? 'Root' : 'L' + lowest) + ' Field' : 'No members yet';
+  const pending = document.getElementById('mPending');
+  const count = me.canDecide ? me.requestCount : 0;
+  pending.textContent = '⏳ +' + count + ' pending approvals';
+  pending.classList.toggle('hidden', count <= 0);
+  const online = syncState === 'synced' || syncState === 'syncing';
+  const cloud = document.getElementById('cloudPill');
+  cloud.innerHTML = online ? '☁ SHARED CLOUD<br>SYNCED' : syncState === 'offline' ? '☁ OFFLINE<br>CACHED' : '☁ SYNC<br>FAILED';
+  cloud.className = 'cloud-pill' + (online ? '' : ' off');
+  const holding = members.filter(m => !m.withdrawn).length;
+  document.getElementById('mUsdt').textContent = (holding * DEPOSIT_USDT).toLocaleString();
+  document.getElementById('mUsdtSub').textContent = holding + ' holding · ' + (members.length - holding) + ' withdrawn';
+  document.getElementById('mRole').textContent = me.isMainAdmin ? 'Main Admin' : 'Admin (Full CRUD)';
+}
+
+function renderCategories() {
+  const byRank = new Map();
+  members.forEach(m => {
+    const rank = statsOf(m).rank;
+    if (!byRank.has(rank)) byRank.set(rank, []);
+    byRank.get(rank).push(m);
+  });
+  let html = '';
+  for (let l = 0; l <= MAX_LEVEL; l++) {
+    const list = byRank.get(l) || [];
+    html += `<tr class="cat-row" onclick="toggleCategory(${l})">
+        <td>${l === 0 ? 'Level 0<br><small>No members</small>' : 'Level ' + l + '<br><small>Manage</small>'}</td>
+        <td>${l === 0 ? '0–' + (levelTargets[0] - 1) : levelTargets[l - 1]}</td>
+        <td>${l === 0 ? '—' : TEAM_TARGETS[l - 1] ? TEAM_TARGETS[l - 1] + '+' : '—'}</td>
+        <td>${l === 0 ? '—' : VOLUME_BONUS[l - 1]}</td>
+        <td>${l === 0 ? '—' : GUARANTEED_BONUS[l - 1]}</td>
+        <td><span class="cat-count ${list.length ? '' : 'zero'}">${list.length}</span></td>
+      </tr>`;
+    if (openCategory === l) {
+      html += `<tr class="cat-names"><td colspan="6">${list.length
+        ? list.map(m => `${escapeHtml(m.name)} <small>(${statsOf(m).direct} direct · ${statsOf(m).team} team)</small>`).join(', ')
+        : 'Nobody in this category yet.'}</td></tr>`;
+    }
+  }
+  document.getElementById('catBody').innerHTML = html;
+}
+
+function toggleCategory(level) {
+  openCategory = openCategory === level ? null : level;
+  renderCategories();
+}
+
+// ---------------------------------------------------------------- Deposits (admins)
+
+function setDepFilter(filter) {
+  depFilter = filter;
+  renderDeposits();
+}
+
+function renderDeposits() {
+  document.querySelectorAll('#depFilter button').forEach(b => b.classList.toggle('active', b.dataset.f === depFilter));
+  const out = members.filter(m => m.withdrawn).length;
+  const holding = members.length - out;
+  document.getElementById('depTotal').textContent = (members.length * DEPOSIT_USDT).toLocaleString();
+  document.getElementById('depTotalSub').textContent = members.length + ' members × 500 USDT';
+  document.getElementById('depHolding').textContent = (holding * DEPOSIT_USDT).toLocaleString();
+  document.getElementById('depHoldingSub').textContent = holding + ' members';
+  document.getElementById('depOut').textContent = (out * DEPOSIT_USDT).toLocaleString();
+  document.getElementById('depOutSub').textContent = out + ' members';
+  const query = document.getElementById('depSearch').value.trim().toLowerCase();
+  const digits = query.replace(/\D/g, '');
+  const list = treeOrder().filter(m =>
+    (depFilter === 'all' || (depFilter === 'out') === !!m.withdrawn) &&
+    (!query || searchScore(m, query, digits) >= 0));
+  const box = document.getElementById('depList');
+  if (!list.length) {
+    box.innerHTML = '<div class="empty-card">No member matches this filter.</div>';
+    return;
+  }
+  box.innerHTML = list.map(m => {
+    const manager = byId(m.referrer);
+    const id = escapeHtml(m.id);
+    return `<div class="dep-row ${m.withdrawn ? 'out' : ''}">
+        <div class="avatar" style="--c:${m.withdrawn ? '#22c55e' : '#f59e0b'}">${escapeHtml(initials(m.name))}</div>
+        <div class="dep-main">
+          <div class="dep-name">${escapeHtml(m.name)}</div>
+          <div class="reg-sub">${manager ? 'Under ' + escapeHtml(manager.name) + ' · ' : ''}${levelLabel(levelOf(m))}${m.doj ? ' · Joined ' + escapeHtml(m.doj) : ''}</div>
+          <div class="reg-sub">${m.withdrawn ? '✅ 500 USDT withdrawn' : '⏳ 500 USDT still deposited'}</div>
+        </div>
+        <label class="dep-check">
+          <input type="checkbox" data-id="${id}" ${m.withdrawn ? 'checked' : ''} onchange="toggleWithdrawn(this)">
+          WITHDRAWN
+        </label>
+      </div>`;
+  }).join('');
+}
+
+function toggleWithdrawn(box) {
+  const m = byId(box.dataset.id);
+  if (!m) return;
+  const question = box.checked
+    ? 'Mark that ' + m.name + ' has WITHDRAWN the 500 USDT deposit?'
+    : 'Mark that ' + m.name + ' has NOT withdrawn the 500 USDT deposit?';
+  if (!confirm(question)) { box.checked = !box.checked; return; }
+  const result = JSON.parse(Android.setDepositWithdrawn(String(m.id), box.checked));
+  if (!result.ok) { box.checked = !box.checked; alert(result.error); }
+}
+
+// ---------------------------------------------------------------- Search
+
+// 0 = name starts with the text, 1 = a word in the name starts with it, 2 = name contains it,
+// 3 = phone number contains the digits (3+ digits); -1 = no match
+function searchScore(member, query, digits) {
+  const name = member.name.toLowerCase();
+  if (name.startsWith(query)) return 0;
+  if (name.split(/\s+/).some(word => word.startsWith(query))) return 1;
+  if (name.includes(query)) return 2;
+  if (digits.length >= 3 && (member.contact || '').replace(/\D/g, '').includes(digits)) return 3;
+  return -1;
+}
+
+function searchMatches() {
+  const query = document.getElementById('searchInput').value.trim().toLowerCase();
+  if (!query) return [];
+  const digits = query.replace(/\D/g, '');
+  return members
+    .map(m => ({ member: m, score: searchScore(m, query, digits) }))
+    .filter(r => r.score >= 0)
+    .sort((a, b) => a.score - b.score || a.member.name.localeCompare(b.member.name))
+    .map(r => r.member);
+}
+
+function highlightMatch(name, query) {
+  const at = name.toLowerCase().indexOf(query);
+  if (!query || at < 0) return escapeHtml(name);
+  return escapeHtml(name.slice(0, at)) + '<mark>' + escapeHtml(name.slice(at, at + query.length)) + '</mark>' +
+    escapeHtml(name.slice(at + query.length));
+}
+
+function onSearch() {
+  const input = document.getElementById('searchInput');
+  const query = input.value.trim().toLowerCase();
+  const box = document.getElementById('searchResults');
+  document.getElementById('searchClear').classList.toggle('hidden', !input.value);
+  if (!query) {
+    hideSearchResults();
+    return;
+  }
+  const matches = searchMatches();
+  let html = matches.slice(0, MAX_SEARCH_RESULTS).map(m => {
+    const manager = byId(m.referrer);
+    const meta = [levelLabel(levelOf(m))];
+    if (manager) meta.push('under ' + escapeHtml(manager.name));
+    if (m.contact) meta.push('📞 ' + escapeHtml(formatContact(m.contact)));
+    return `<div class="search-result" data-id="${escapeHtml(m.id)}" onclick="focusMember(this.dataset.id)">
+        <div class="sr-name">${highlightMatch(m.name, query)}</div>
+        <div class="sr-meta">${meta.join(' · ')}</div>
+      </div>`;
+  }).join('');
+  if (!matches.length) html = '<div class="search-empty">No member found</div>';
+  else if (matches.length > MAX_SEARCH_RESULTS) {
+    html += `<div class="search-empty">${matches.length - MAX_SEARCH_RESULTS} more… type more letters</div>`;
+  }
+  box.innerHTML = html;
+  box.classList.remove('hidden');
+}
+
+function hideSearchResults() {
+  document.getElementById('searchResults').classList.add('hidden');
+}
+
+function clearSearch() {
+  const input = document.getElementById('searchInput');
+  input.value = '';
+  hideSearchResults();
+  document.getElementById('searchClear').classList.add('hidden');
+  input.focus();
+}
+
+function pickFirstResult() {
+  const first = searchMatches()[0];
+  if (first) focusMember(first.id);
+}
+
+// Opens every collapsed manager above the member, then scrolls to and highlights its card
+function focusMember(id) {
+  const member = byId(id);
+  if (!member) return;
+  hideSearchResults();
+  document.getElementById('searchInput').blur();
+  if (currentTab !== 'chart' && currentTab !== 'list') showTab('chart');
+  const seen = new Set();
+  let cursor = member;
+  while (cursor && cursor.referrer && !seen.has(String(cursor.id))) {
+    seen.add(String(cursor.id));
+    collapsedNodes.delete(String(cursor.referrer));
+    cursor = byId(cursor.referrer);
+  }
+  highlightedId = String(member.id);
+  renderCurrent();
+  const view = document.getElementById(currentTab === 'list' ? 'listView' : 'chartView');
+  const target = Array.from(view.querySelectorAll('[data-id]')).find(el => el.dataset.id === highlightedId);
+  const card = target && target.closest('.node-card, .member-card');
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+  setTimeout(() => {
+    if (highlightedId !== String(member.id)) return;
+    highlightedId = null;
+    document.querySelectorAll('.search-hit').forEach(el => el.classList.remove('search-hit'));
+  }, 4000);
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.search-box')) hideSearchResults();
+});
+
+// ---------------------------------------------------------------- Registry (Members tab)
+
+function renderRegistryRoots() {
+  const select = document.getElementById('registryRoot');
+  const current = select.value;
+  const roots = rootMembers();
+  select.innerHTML = '<option value="">All Downlines Active</option>' +
+    roots.map(r => `<option value="${escapeHtml(r.id)}">${escapeHtml(r.name)}'s tree</option>`).join('');
+  if (roots.some(r => String(r.id) === current)) select.value = current;
+}
+
+function roleTag(m) {
+  if (!byId(m.referrer)) return '<span class="tag tag-root">ROOT</span>';
+  return statsOf(m).direct > 0 ? '<span class="tag tag-lead">LEAD</span>' : '<span class="tag tag-member">MEMBER</span>';
+}
+
+function registryCard(m) {
+  const manager = byId(m.referrer);
+  const s = statsOf(m);
+  const level = levelOf(m);
+  const id = escapeHtml(m.id);
+  return `<div class="reg-card ${manager ? '' : 'root'}">
+      <div class="reg-top">
+        <div class="avatar" style="--c:${levelColor(m)}">${escapeHtml(initials(m.name))}</div>
+        <div class="reg-main">
+          <div class="reg-name">${escapeHtml(m.name)} ${roleTag(m)}</div>
+          ${manager ? `<div class="reg-sub">Joined under: <b>${escapeHtml(manager.name)}</b></div>` : ''}
+          ${m.contact ? `<div class="reg-sub">Contact: ${escapeHtml(formatContact(m.contact))}</div>` : ''}
+          <div class="reg-sub">${rankBadge(m)} ${depositBadge(m)}</div>
+        </div>
+        <span class="level-pill ${level === 0 ? 'root' : ''}">${levelLabel(level)}</span>
+      </div>
+      ${teamBox(m)}
+      <div class="reg-bottom">
+        ${m.addedBy ? `<span class="mini">by ${escapeHtml(m.addedBy)}</span>` : ''}
+        <span class="spacer"></span>
+        <button class="btn" data-id="${id}" onclick="editMember(this.dataset.id)">✏️ Edit</button>
+        <button class="btn btn-danger" data-id="${id}" onclick="deleteMember(this.dataset.id)">🗑 Delete</button>
+        <button class="link-arrow" data-id="${id}" onclick="viewInChart(this.dataset.id)">View in Chart →</button>
+      </div>
+    </div>`;
+}
+
+function renderRegistry() {
+  const rootId = document.getElementById('registryRoot').value;
+  const query = document.getElementById('registrySearch').value.trim().toLowerCase();
+  let list = treeOrder();
+  if (rootId) {
+    const keep = descendantIds(rootId);
+    keep.add(String(rootId));
+    list = list.filter(m => keep.has(String(m.id)));
+  }
+  if (query) {
+    const digits = query.replace(/\D/g, '');
+    list = list.filter(m => searchScore(m, query, digits) >= 0);
+  }
+  const box = document.getElementById('registryList');
+  if (!list.length) {
+    box.innerHTML = `<div class="empty-card">${members.length ? 'No member matches this filter.' : 'No members yet.'}</div>`;
+    return;
+  }
+  let html = list.slice(0, registryLimit).map(registryCard).join('');
+  if (list.length > registryLimit) {
+    html += `<button class="show-more" onclick="registryLimit += REGISTRY_PAGE; renderRegistry()">Show more (${list.length - registryLimit} left)</button>`;
+  }
+  box.innerHTML = html;
+}
+
+function viewInChart(id) {
+  showTab('chart');
+  focusMember(id);
+}
+
+function requestPlacement(r) {
+  const parts = [];
+  if (r.level !== null && r.level !== undefined) parts.push(levelLabel(r.level));
+  if (r.managerName) parts.push('under ' + escapeHtml(r.managerName));
+  return parts.length ? parts.join(' ') : 'Root (no manager)';
+}
+
+function requestCard(r, compact) {
+  const isAccess = r.type === 'ADMIN' || r.type === 'EDIT';
+  const title = r.type === 'EDIT' ? '✏️ ' + escapeHtml(r.requestedBy) + ' wants edit access'
+    : r.type === 'ADMIN' ? '🔑 ' + escapeHtml(r.requestedBy) + ' wants admin access' : escapeHtml(r.memberName);
+  const when = r.createdAt ? new Date(r.createdAt).toLocaleString([], { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '';
+  const id = escapeHtml(r.id);
+  return `<div class="reg-card pending">
+      <div class="reg-top">
+        <div class="avatar" style="--c:#f59e0b">${escapeHtml(initials(isAccess ? r.requestedBy : r.memberName))}</div>
+        <div class="reg-main">
+          <div class="reg-name">${title} ${isAccess ? '' : '<span class="tag tag-pending">PENDING REQ</span>'}</div>
+          ${isAccess ? '' : `<div class="reg-sub">Requested by: <b>${escapeHtml(r.requestedBy)}</b>${r.rootName ? ' → ' + escapeHtml(r.rootName) : ''}</div>`}
+          ${!isAccess && r.contact && !compact ? `<div class="reg-sub">Contact: ${escapeHtml(formatContact(r.contact))}</div>` : ''}
+          ${isAccess ? '' : `<div class="reg-sub">Target Placement: ${requestPlacement(r)}</div>`}
+          <div class="reg-sub">${escapeHtml(when)}</div>
+        </div>
+      </div>
+      <div class="reg-bottom">
+        <button class="btn" data-id="${id}" onclick="Android.openRequest(this.dataset.id)">Details</button>
+        <span class="spacer"></span>
+        <button class="btn btn-ok" data-id="${id}" onclick="decideRequest(this.dataset.id, true)">✅ Accept</button>
+        <button class="btn" data-id="${id}" onclick="decideRequest(this.dataset.id, false)">Reject</button>
+      </div>
+    </div>`;
+}
+
+function renderRegistryPending() {
+  document.getElementById('registryPending').innerHTML = requestsToDecide
+    .filter(r => r.type !== 'ADMIN' && r.type !== 'EDIT')
+    .map(r => requestCard(r, true)).join('');
+}
+
+function renderRequests(error) {
+  const box = document.getElementById('requestsDecide');
+  if (error) {
+    box.innerHTML = `<div class="empty-card">⚠️ ${escapeHtml(error)}</div>`;
+    return;
+  }
+  box.innerHTML = requestsToDecide.length
+    ? requestsToDecide.map(r => requestCard(r, false)).join('')
+    : '<div class="empty-card">No requests are waiting. 👍</div>';
+}
+
+function decideRequest(id, approve) {
+  const r = requestsToDecide.find(x => x.id === id);
+  if (!r) return;
+  const what = r.type === 'ADMIN' ? 'admin access for ' + r.requestedBy
+    : r.type === 'EDIT' ? 'edit access for ' + r.requestedBy : r.memberName;
+  if (!approve && !confirm('Reject the request for ' + what + '?')) return;
+  Android.decideRequest(id, approve);
+}
+
+// ---------------------------------------------------------------- New member celebration
+
+const FIREWORK_COLORS = ['#ff4fd8', '#ff7a59', '#ffd36e', '#7df9ff', '#8a7dff', '#ffffff', '#5cff9d', '#ff9de6'];
+const CELEBRATION_MS = 4500;
+
+// Fireworks over a purple sky for a few seconds (tap to close); called after a member is added
+window.celebrate = function(name) {
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'celebration';
+  overlay.innerHTML = `<canvas></canvas><div class="celebration-text">
+      <div class="big">🎉 ${escapeHtml(name || 'New member')} 🎉</div>
+      <div class="small">Welcome to CR Group Tracker!</div></div>`;
+  document.body.appendChild(overlay);
+  const canvasEl = overlay.querySelector('canvas');
+  const ctx = canvasEl.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const W = window.innerWidth, H = window.innerHeight;
+  canvasEl.width = W * dpr;
+  canvasEl.height = H * dpr;
+  ctx.scale(dpr, dpr);
+
+  const stars = Array.from({ length: 70 }, () => ({ x: Math.random() * W, y: Math.random() * H * 0.8, r: Math.random() * 1.4 + 0.3, p: Math.random() * 6 }));
+  const rockets = [];
+  const sparks = [];
+  const start = performance.now();
+  let nextLaunch = 0;
+  let closed = false;
+
+  function launch() {
+    rockets.push({
+      x: W * (0.12 + Math.random() * 0.76), y: H + 10,
+      vx: (Math.random() - 0.5) * 1.2, vy: -(H / 75) * (0.8 + Math.random() * 0.25),
+      targetY: H * (0.12 + Math.random() * 0.35),
+      color: FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)]
+    });
+  }
+
+  function burst(x, y, color) {
+    const count = 70 + Math.floor(Math.random() * 40);
+    const second = FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)];
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count + Math.random() * 0.1;
+      const speed = 1.5 + Math.random() * 4.5;
+      sparks.push({ x, y, px: x, py: y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+                    life: 1, decay: 0.008 + Math.random() * 0.012, color: Math.random() < 0.75 ? color : second });
+    }
+  }
+
+  function frame(now) {
+    if (closed) return;
+    const t = now - start;
+    ctx.clearRect(0, 0, W, H);
+    stars.forEach(s => {
+      ctx.globalAlpha = 0.4 + 0.4 * Math.sin(s.p + t / 300);
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+    });
+    if (t < CELEBRATION_MS - 1500 && t >= nextLaunch) {
+      launch();
+      if (Math.random() < 0.5) launch();
+      nextLaunch = t + 250 + Math.random() * 350;
+    }
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = rockets.length - 1; i >= 0; i--) {
+      const r = rockets[i];
+      const px = r.x, py = r.y;
+      r.x += r.vx; r.y += r.vy; r.vy *= 0.985;
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = r.color; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(px, py + 14); ctx.lineTo(r.x, r.y); ctx.stroke();
+      if (r.y <= r.targetY || r.vy > -1.5) {
+        burst(r.x, r.y, r.color);
+        rockets.splice(i, 1);
+      }
+    }
+    for (let i = sparks.length - 1; i >= 0; i--) {
+      const s = sparks[i];
+      s.px = s.x; s.py = s.y;
+      s.vx *= 0.97; s.vy = s.vy * 0.97 + 0.05;
+      s.x += s.vx; s.y += s.vy;
+      s.life -= s.decay;
+      if (s.life <= 0) { sparks.splice(i, 1); continue; }
+      ctx.globalAlpha = s.life;
+      ctx.strokeStyle = s.color; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(s.px - s.vx * 2, s.py - s.vy * 2); ctx.lineTo(s.x, s.y); ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    if (t > CELEBRATION_MS) close(); else requestAnimationFrame(frame);
+  }
+
+  function close() {
+    if (closed) return;
+    closed = true;
+    overlay.classList.remove('show');
+    setTimeout(() => overlay.remove(), 400);
+  }
+
+  overlay.addEventListener('click', close);
+  requestAnimationFrame(() => overlay.classList.add('show'));
+  requestAnimationFrame(frame);
+};
+
+// ---------------------------------------------------------------- Add / Edit form
+
+function isFormOpen() {
+  return !document.getElementById('memberModal').classList.contains('hidden');
+}
+
+function showForm() {
+  document.getElementById('memberModal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeForm() {
+  document.getElementById('memberModal').classList.add('hidden');
+  document.body.style.overflow = '';
+  editingId = null;
+  draftId = null;
+}
+
+function setCountryCode(code) {
+  const sel = document.getElementById('countryCode');
+  if (!COUNTRY_CODES.some(c => c[0] === code)) {
+    sel.insertAdjacentHTML('beforeend', `<option value="${escapeHtml(code)}">+${escapeHtml(code)}</option>`);
+  }
+  sel.value = code;
+}
+
+// managerId: pre-selects the manager when adding "under" someone. Without edit rights it becomes a request.
+function openAddForm(managerId) {
+  editingId = null;
+  draftId = newId();
+  document.getElementById('memberForm').reset();
+  setCountryCode('91');
+  document.getElementById('doj').valueAsDate = new Date();
+  const manager = managerId ? byId(managerId) : null;
+  const action = me.canEdit ? 'Add Member' : 'Request New Member';
+  document.getElementById('formTitle').textContent = manager ? action + ' under ' + manager.name : action;
+  document.getElementById('saveBtn').textContent = me.canEdit ? '💾 Save Member' : '📨 Send Request';
+  document.getElementById('rootRow').classList.toggle('hidden', !!me.canEdit);
+  refreshFormOptions(manager ? String(manager.id) : '', null);
+  showForm();
+  document.getElementById('name').focus();
+}
+
+function editMember(id) {
+  const member = byId(id);
+  if (!member || !member.canEdit) return;
+  editingId = member.id;
+  draftId = null;
+  document.getElementById('memberForm').reset();
+  document.getElementById('name').value = member.name;
+  document.getElementById('doj').value = member.doj;
+  const match = /^\+(\d{1,3}) (\d+)$/.exec(member.contact || '');
+  setCountryCode(match ? match[1] : '91');
+  document.getElementById('contact').value = match ? match[2] : '';
+  document.getElementById('formTitle').textContent = 'Edit Member';
+  document.getElementById('saveBtn').textContent = '💾 Update Member';
+  document.getElementById('rootRow').classList.add('hidden');
+  refreshFormOptions(member.referrer || '', member.level >= 0 ? member.level : null);
+  showForm();
+}
+
+// Manager list (a member can't report to themselves or their own team) and level list
+function refreshFormOptions(managerId, level) {
+  const sel = document.getElementById('referrer');
+  const selected = managerId !== undefined ? managerId : sel.value;
+  const excluded = editingId ? descendantIds(editingId) : new Set();
+  if (editingId) excluded.add(String(editingId));
+  const choices = members.filter(m => !excluded.has(String(m.id)));
+  sel.innerHTML = '<option value="">-- Root / No Referrer --</option>' +
+    choices.map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)} (${levelLabel(levelOf(m))})</option>`).join('');
+  sel.value = choices.some(m => String(m.id) === String(selected)) ? selected : '';
+  updateLevelOptions(level);
+}
+
+// Root only without a manager; under a Level N manager the level is N..6; a manager stays at or above its members
+function updateLevelOptions(preferred) {
+  const levelSel = document.getElementById('level');
+  const manager = byId(document.getElementById('referrer').value);
+  const min = manager ? Math.max(1, levelOf(manager)) : 0;
+  const childLevels = editingId ? childrenOf(editingId).map(m => m.level).filter(l => l >= 1) : [];
+  const max = Math.max(min, childLevels.length ? Math.min(...childLevels) : MAX_LEVEL);
+  const current = preferred !== undefined && preferred !== null ? preferred : parseInt(levelSel.value, 10);
+  let options = '';
+  for (let l = min; l <= max; l++) {
+    options += `<option value="${l}">${l === 0 ? 'Root Manager' : 'Level ' + l + ' (target ' + levelTargets[l - 1] + ' members per manager)'}</option>`;
+  }
+  levelSel.innerHTML = options;
+  levelSel.value = String(current >= min && current <= max ? current : min);
+  document.getElementById('levelHint').textContent = manager
+    ? `${manager.name} is ${levelLabel(levelOf(manager))}, so this member can be Level ${min}–${max}.`
+    : 'No manager selected: choose Root Manager or the level this person manages.';
+}
+
+document.getElementById('memberForm').addEventListener('submit', function(e) {
+  e.preventDefault();
+  const name = document.getElementById('name').value.trim();
+  if (!name) return alert('Please enter the Member Name');
+  const managerId = document.getElementById('referrer').value;
+  const payload = {
+    id: editingId || draftId,
+    isNew: !editingId,
+    name: name,
+    countryCode: document.getElementById('countryCode').value,
+    contact: document.getElementById('contact').value.trim(),
+    doj: document.getElementById('doj').value,
+    managerId: managerId || null,
+    level: parseInt(document.getElementById('level').value, 10),
+    allowDuplicate: false
+  };
+  if (me.canEdit) {
+    saveMember(payload);
+  } else {
+    payload.rootName = document.getElementById('rootSelect').value;
+    if (!payload.rootName) return alert('Please choose which root to send the request to.');
+    requestMember(payload);
+  }
+});
+
+// Members without edit rights: the form is sent to the chosen root, who accepts or rejects it
+function requestMember(payload) {
+  const button = document.getElementById('saveBtn');
+  button.disabled = true;
+  let result;
+  try {
+    result = JSON.parse(Android.requestMember(JSON.stringify(payload)));
+  } finally {
+    button.disabled = false;
+  }
+  if (!result.ok) return alert(result.error);
+  closeForm();
+  alert('📨 ' + result.message + '\n\nYou can follow it under 📋 My Requests.');
+}
+
+function saveMember(payload) {
+  const button = document.getElementById('saveBtn');
+  button.disabled = true; // the stable id also prevents duplicates if Save is tapped twice
+  let result;
+  try {
+    result = JSON.parse(Android.saveMember(JSON.stringify(payload)));
+  } finally {
+    button.disabled = false;
+  }
+  if (!result.ok) {
+    if (result.code === 'DUPLICATE') {
+      if (confirm(result.error + '\n\nSave anyway?')) saveMember(Object.assign({}, payload, { allowDuplicate: true }));
+    } else {
+      alert(result.error);
+    }
+    return;
+  }
+  if (payload.managerId) collapsedNodes.delete(String(payload.managerId));
+  closeForm();
+  if (payload.isNew) celebrate(payload.name);
+}
+
+function deleteMember(id) {
+  if (me.isAdmin) Android.deleteMember(String(id));
+}
+
+// ---------------------------------------------------------------- Chart & list
+
+function toggleNode(id, event) {
+  if (event) event.stopPropagation();
+  const strId = String(id);
+  if (collapsedNodes.has(strId)) collapsedNodes.delete(strId); else collapsedNodes.add(strId);
+  renderCurrent();
+}
+
+// Level badge (Root / L1..L6) and team size against the level target
+function cardBadges(member, childCount) {
+  const level = member.level >= 0 ? member.level : null;
+  let countBadge = '';
+  if (level !== null && level >= 1 && isManagerNode(member)) {
+    const target = levelTargets[level - 1];
+    countBadge = `<span class="count-badge ${childCount >= target ? 'done' : ''}">${childCount}/${target}</span>`;
+  }
+  const levelBadge = level === null ? '' : `<span class="level-badge ${level === 0 ? 'root' : ''}">${level === 0 ? 'Root' : 'L' + level}</span>`;
+  return { levelBadge, countBadge };
+}
+
+function actionIcons(member, id) {
+  return `${member.canEdit ? `<span data-id="${id}" onclick="editMember(this.dataset.id)" title="Edit">✏️</span>` : ''}
+      <span data-id="${id}" onclick="openAddForm(this.dataset.id)" title="${me.canEdit ? 'Add under' : 'Request under'}">${me.canEdit ? '➕' : '📝'}</span>
+      ${me.isAdmin ? `<span data-id="${id}" onclick="deleteMember(this.dataset.id)" title="Delete">🗑️</span>` : ''}`;
+}
+
+function chartCard(member, childCount, collapsed, expandable) {
+  const id = escapeHtml(member.id);
+  const { levelBadge, countBadge } = cardBadges(member, childCount);
+  const extra = rankBadge(member) + depositBadge(member);
+  return `<div class="node-card${String(member.id) === highlightedId ? ' search-hit' : ''}" style="border-color:${levelColor(member)}">
+      <div class="node-name" data-id="${id}" onclick="editMember(this.dataset.id)">${escapeHtml(member.name)}</div>
+      <div class="node-badges">${levelBadge}${countBadge}${extra}</div>
+      ${teamBox(member)}
+      ${member.contact ? `<div class="node-line">📞 ${escapeHtml(formatContact(member.contact))}</div>` : ''}
+      <div class="node-actions">${actionIcons(member, id)}</div>
+      ${expandable
+        ? `<div class="node-toggle" data-id="${id}" onclick="toggleNode(this.dataset.id, event)">${collapsed ? '▶ Show team' + (childCount ? ' (' + childCount + ')' : '') : '▼ Hide team'}</div>`
+        : ''}
+    </div>`;
+}
+
+function buildChart(member, rendered) {
+  rendered.add(String(member.id));
+  const children = childrenOf(member.id).filter(c => !rendered.has(String(c.id)));
+  const isCollapsed = collapsedNodes.has(String(member.id));
+  const showAddBox = isManagerNode(member);
+  const expandable = children.length > 0 || showAddBox;
+  let html = `<li>${chartCard(member, children.length, isCollapsed, expandable)}`;
+  if (expandable && isCollapsed) {
+    descendantIds(member.id).forEach(id => rendered.add(id));
+  } else if (expandable) {
+    let team = '';
+    children.forEach(child => { if (!rendered.has(String(child.id))) team += buildChart(child, rendered); });
+    if (showAddBox) {
+      team += `<li><div class="node-add" data-id="${escapeHtml(member.id)}" onclick="openAddForm(this.dataset.id)">${me.canEdit ? '➕ Add member' : '📝 Request member'}<br><small>under ${escapeHtml(member.name)}</small></div></li>`;
+    }
+    html += `<ul>${team}</ul>`;
+  }
+  return html + '</li>';
+}
+
+function memberCard(member, childCount, collapsed, expandable) {
+  const id = escapeHtml(member.id);
+  const { levelBadge, countBadge } = cardBadges(member, childCount);
+  return `<div class="member-card${String(member.id) === highlightedId ? ' search-hit' : ''}" style="border-left-color:${levelColor(member)}">
+      ${expandable
+        ? `<span class="toggle-btn ${collapsed ? 'collapsed' : ''}" data-id="${id}" onclick="toggleNode(this.dataset.id, event)">▼</span>`
+        : `<span class="toggle-placeholder"></span>`}
+      <div class="member-info" data-id="${id}" onclick="editMember(this.dataset.id)">
+        <span class="name">${escapeHtml(member.name)}</span>${levelBadge}${countBadge}${rankBadge(member)}${depositBadge(member)}
+        ${member.contact ? `<div class="contact">📞 ${escapeHtml(formatContact(member.contact))}</div>` : ''}
+        ${teamBox(member)}
+      </div>
+      ${actionIcons(member, id).replace(/<span /g, '<span class="add-icon" ')}
+    </div>`;
+}
+
+function buildTree(member, rendered) {
+  rendered.add(String(member.id));
+  const children = childrenOf(member.id).filter(c => !rendered.has(String(c.id)));
+  const isCollapsed = collapsedNodes.has(String(member.id));
+  const showAddBox = isManagerNode(member);
+  const expandable = children.length > 0 || showAddBox;
+  let html = `<li>${memberCard(member, children.length, isCollapsed, expandable)}`;
+  if (expandable) {
+    html += `<ul class="nested-group ${isCollapsed ? 'hidden' : ''}">`;
+    children.forEach(child => { if (!rendered.has(String(child.id))) html += buildTree(child, rendered); });
+    if (showAddBox) {
+      html += `<li><span class="add-child" data-id="${escapeHtml(member.id)}" onclick="openAddForm(this.dataset.id)">${me.canEdit ? '➕ Add member' : '📝 Request member'} under ${escapeHtml(member.name)}</span></li>`;
+    }
+    html += '</ul>';
+  }
+  return html + '</li>';
+}
+
+function treeHtml(build) {
+  const rendered = new Set();
+  let html = '<ul>';
+  rootMembers().forEach(root => { html += build(root, rendered); });
+  members.forEach(m => { if (!rendered.has(String(m.id))) html += build(m, rendered); });
+  return html + '</ul>';
+}
+
+const EMPTY_TREE = '<p style="text-align:center; color:var(--muted); padding:20px;">No members found.</p>';
+
+function renderChart() {
+  const scroller = document.getElementById('chartScroll');
+  const previousScroll = scroller.scrollLeft;
+  const view = document.getElementById('chartView');
+  view.style.zoom = chartZoom;
+  document.getElementById('zoomLabel').textContent = Math.round(chartZoom * 100) + '%';
+  view.innerHTML = members.length ? treeHtml(buildChart) : EMPTY_TREE;
+  if (centerChartPending && members.length > 0) {
+    scroller.scrollLeft = (scroller.scrollWidth - scroller.clientWidth) / 2;
+    centerChartPending = false;
+  } else {
+    scroller.scrollLeft = previousScroll;
+  }
+}
+
+function renderList() {
+  document.getElementById('listView').innerHTML = members.length ? treeHtml(buildTree) : EMPTY_TREE;
+}
+
+function clampZoom(zoom) {
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(zoom * 100) / 100));
+}
+
+function applyChartZoom(zoom, anchorX) {
+  const scroller = document.getElementById('chartScroll');
+  const view = document.getElementById('chartView');
+  const anchor = anchorX !== undefined ? anchorX : scroller.clientWidth / 2;
+  const contentX = (scroller.scrollLeft + anchor) / chartZoom;
+  chartZoom = clampZoom(zoom);
+  localStorage.setItem('cr_chart_zoom', String(chartZoom));
+  view.style.zoom = chartZoom;
+  scroller.scrollLeft = contentX * chartZoom - anchor;
+  document.getElementById('zoomLabel').textContent = Math.round(chartZoom * 100) + '%';
+}
+
+function zoomChart(direction) {
+  applyChartZoom(direction === 0 ? 1 : direction > 0 ? chartZoom * ZOOM_STEP : chartZoom / ZOOM_STEP);
+}
+
+function fitChart() {
+  const scroller = document.getElementById('chartScroll');
+  const view = document.getElementById('chartView');
+  const content = view.querySelector(':scope > ul');
+  if (!content) return;
+  view.style.zoom = 1;
+  const naturalWidth = content.offsetWidth;
+  view.style.zoom = chartZoom;
+  const style = getComputedStyle(scroller);
+  const available = scroller.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  applyChartZoom(Math.min(1, available / Math.max(naturalWidth, 1)));
+  scroller.scrollLeft = 0;
+}
+
+// Two-finger pinch on the chart zooms it
+function enablePinchZoom() {
+  const scroller = document.getElementById('chartScroll');
+  let startDistance = 0;
+  let startZoom = 1;
+  const distance = touches => Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
+  scroller.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) {
+      startDistance = distance(e.touches);
+      startZoom = chartZoom;
+    }
+  }, { passive: true });
+  scroller.addEventListener('touchmove', e => {
+    if (e.touches.length !== 2 || !startDistance) return;
+    e.preventDefault();
+    const middleX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - scroller.getBoundingClientRect().left;
+    applyChartZoom(startZoom * distance(e.touches) / startDistance, middleX);
+  }, { passive: false });
+  scroller.addEventListener('touchend', e => { if (e.touches.length < 2) startDistance = 0; });
+}
+
+function collapseAll() {
+  members.forEach(m => collapsedNodes.add(String(m.id)));
+  renderCurrent();
+}
+
+function expandAll() {
+  collapsedNodes.clear();
+  renderCurrent();
+}
+
+// One-time move of data saved by the first (offline-only) app version into this account
+function migrateLegacyData() {
+  const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+  if (!legacy) return;
+  const result = JSON.parse(Android.importMembers(legacy));
+  if (result.ok) localStorage.removeItem(LEGACY_STORAGE_KEY);
+}
+
+// ---------------------------------------------------------------- Start
+
+document.getElementById('countryCode').innerHTML = COUNTRY_CODES
+  .map(([code, country]) => `<option value="${code}">+${code} ${escapeHtml(country)}</option>`).join('');
+enablePinchZoom();
+showTab(currentTab);
+renderAll();
+migrateLegacyData();
+Android.onPageReady();
+</script>
 </body>
 </html>
