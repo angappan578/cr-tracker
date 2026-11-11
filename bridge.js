@@ -14,6 +14,7 @@
   const CFG = window.CR_CONFIG || {};
   const SESSION_KEY = 'cr_web_session';
   const SYNC_INTERVAL_MS = 60000;
+  const PRIVACY_URL = 'https://angappan578.github.io/cr-tracker/privacy.html';
   const LIST_HEADERS = ['memberId', 'memberName', 'contactNumber', 'joinedDate', 'managerId', 'managerName',
     'parentMemberId', 'parentMemberName', 'level', 'createdAt', 'updatedAt', 'status'];
 
@@ -300,6 +301,8 @@
           <div><button class="link" id="crwForgot">Forgot password?</button></div>
           <div id="crwGoogleBox"><div class="or">— or —</div><div id="crwGoogle"></div></div>
           <div><button class="link" id="crwMode">New user? Create an account</button></div>
+          <div class="or">An app for CR Group members to track their member tree.<br>
+            <a href="${PRIVACY_URL}" target="_blank" rel="noopener" style="color:#22d3ee">Privacy Policy</a></div>
         </div>`;
       document.body.appendChild(el);
       el.querySelector('#crwGo').onclick = submitLogin;
@@ -686,7 +689,7 @@
     exportSpreadsheet() { exportCsv(); },
     importSpreadsheet() { alert('Uploading Excel files is available in the Android app.'); },
     showClearOptions() { if (confirm('Reload all members from Google Sheets?')) sync(); },
-    openPrivacyPolicy() { window.open('../privacy.html', '_blank'); },
+    openPrivacyPolicy() { window.open(PRIVACY_URL, '_blank', 'noopener'); },
 
     logout() {
       if (!confirm('Log out of ' + (session ? session.username : '') + '?')) return;
